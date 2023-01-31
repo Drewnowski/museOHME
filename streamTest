@@ -9,6 +9,8 @@ from time import sleep,time
 from pythonosc import udp_client
 from pythonosc import osc_message_builder
 
+from utils import highest_value
+
 # Create UDP client
 client = udp_client.UDPClient('192.168.1.255',9998,  True)
 
@@ -215,7 +217,18 @@ class StreamCleanDataOSC():
         else:
             delta, theta, alpha, beta, gamma = 0,0,0,0,0
 
-        # print(delta, theta, alpha, beta, gamma)
+        # find the maximum
+        global current_delta_max
+        global current_theta_max 
+        global current_alpha_max
+        global current_beta_max 
+        global current_gamma_max
+        
+        current_delta_max = highest_value(delta, current_delta_max)
+        current_theta_max = highest_value(theta, current_theta_max)
+        current_alpha_max = highest_value(alpha, current_alpha_max)
+        current_beta_max = highest_value(beta, current_beta_max)
+        current_gamma_max = highest_value(gamma, current_gamma_max)
 
         # Send data on UDP port (protocol OSC)
         # print ([delta,theta,alpha,beta,gamma])
@@ -229,6 +242,8 @@ class StreamCleanDataOSC():
         message_array.add_arg(beta)
         message_array.add_arg(gamma)
         for i in self.connection_quality_channels:
+            message_array.add_arg(i)
+        for i in [current_delta_max, current_theta_max, current_alpha_max, current_beta_max, current_gamma_max]:
             message_array.add_arg(i)
         
         for i in [deltaTP9, thetaTP9, alphaTP9, betaTP9, gammaTP9]:
@@ -245,35 +260,6 @@ class StreamCleanDataOSC():
         client.send(message_array.build())
         client.send(message_array2.build())
         print(time())
-
-
-
-    # def sendOSC(delta,theta,alpha,beta,gamma,connection_quality_channels,deltaTP9, thetaTP9, alphaTP9, betaTP9, gammaTP9,deltaAF7, thetaAF7, alphaAF7, betaAF7, gammaAF7,deltaAF8, thetaAF8, alphaAF8, betaAF8, gammaAF8,deltaTP10, thetaTP10, alphaTP10, betaTP10, gammaTP10):
-        
-    #     message_array = osc_message_builder.OscMessageBuilder(address = '/mean')
-    #     message_array2 = osc_message_builder.OscMessageBuilder(address = '/allwaves')
-
-    #     message_array.add_arg(delta)
-    #     message_array.add_arg(theta)
-    #     message_array.add_arg(alpha)
-    #     message_array.add_arg(beta)
-    #     message_array.add_arg(gamma)
-    #     for i in connection_quality_channels:
-    #         message_array.add_arg(i)
-        
-    #     for i in [deltaTP9, thetaTP9, alphaTP9, betaTP9, gammaTP9]:
-    #         message_array2.add_arg(i)
-    #     for i in [deltaAF7, thetaAF7, alphaAF7, betaAF7, gammaAF7]:
-    #         message_array2.add_arg(i)
-    #     for i in [deltaAF8, thetaAF8, alphaAF8, betaAF8, gammaAF8]:
-    #         message_array2.add_arg(i)
-    #     for i in [deltaTP10, thetaTP10, alphaTP10, betaTP10, gammaTP10]:
-    #         message_array2.add_arg(i)
-       
-    #     message_array.build()
-    #     message_array2.build()
-    #     client.send(message_array.build())
-    #     client.send(message_array2.build())
 
 
 
