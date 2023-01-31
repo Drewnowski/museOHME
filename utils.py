@@ -19,10 +19,9 @@ def highest_value(input, current_max):
 # def record(signal_clean_TP9,signal_clean_AF7,signal_clean_AF8,signal_clean_TP10):
 #     filename = os.path.join(os.getcwd(), ("C:/Users/drbar/OneDrive/Pulpit/Stage 2022/Recording/recording_%s.csv" % strftime("%Y-%m-%d-%H.%M.%S", gmtime())))
 
-def record(data, timestamp, duration: int = 20,continuous: bool = True,) -> None:
+def record(data, timestamp, duration: int = 20,continuous: bool = True) -> None:
 
     filename = os.path.join(os.getcwd(), "C:/Users/drbar/OneDrive/Pulpit/Stage 2022/Recording/EEG_recording_%s.csv" %(strftime('%Y-%m-%d-%H.%M.%S', gmtime())))
-
 
     res = []
     timestamps = []

@@ -14,6 +14,12 @@ from utils import highest_value
 # Create UDP client
 client = udp_client.UDPClient('192.168.1.255',9998,  True)
 
+current_delta_max = 0.0
+current_theta_max = 0.0
+current_alpha_max = 0.0
+current_beta_max = 0.0
+current_gamma_max = 0.0
+
 def streamCleanData():
 
     print("Looking for an EEG stream...")
@@ -145,7 +151,7 @@ class StreamCleanDataOSC():
 
     def preprocess(self, matrix_data):
         # Data preparation
-        data = np.reshape(matrix_data, (256, 4)) # bcz 5 different channel of data (change 4 -> 5 like in OpenVibe) 4 channels for csv files from Louise
+        data = np.reshape(matrix_data, (256, 5)) # bcz 5 different channel of data (change 4 -> 5 like in OpenVibe) 4 channels for csv files from Louise
         TP9_data = data[:,0]
         AF7_data = data[:,1]
         AF8_data = data[:,2]
