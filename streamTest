@@ -71,7 +71,7 @@ class StreamCleanDataOSC():
                         # [signal_clean_TP9,signal_clean_AF7,signal_clean_AF8,signal_clean_TP10] = self.preprocess(self.data)
                         nb_pull = 0
                     else:
-                        sleep(0.08)
+                        sleep(0.12) # 256/32 = 8 -> 100ms/8 = 12.5ms
                 
 
         except RuntimeError as e:
@@ -265,7 +265,7 @@ class StreamCleanDataOSC():
         message_array2.build()
         client.send(message_array.build())
         client.send(message_array2.build())
-        print(time())
+        # print(time())
 
 
 

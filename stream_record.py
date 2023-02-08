@@ -44,11 +44,14 @@ class StreamCleanDataOSC():
         self.dejitter = dejitter
         self.fs_speed = 32
         self.inlet = StreamInlet(stream, max_chunklen=256)
+        # self.newtimestamps = np.arange(0.0, 1.0, 1.0 / self.fs_speed)
         info = self.inlet.info()
         # self.sfreq = info.nominal_srate()
         self.n_chan = info.channel_count()
         self.preprocess_every = int(256/self.fs_speed)
         self.data = np.zeros((256, self.n_chan))
+        self.times = np.zeros(self.fs_speed)
+        self.times256 = []
 
         self.connection_quality_channels = [3,3,3,3]
 
@@ -68,15 +71,31 @@ class StreamCleanDataOSC():
                     self.process(signal_clean_TP9,signal_clean_AF7,signal_clean_AF8,signal_clean_TP10)
 
                     #MODIF
-                    record(np.column_stack([signal_clean_TP9,signal_clean_AF7,signal_clean_AF8,signal_clean_TP10]),timestamps)
-                    # ValueError: all the input array dimensions for the concatenation axis must match exactly, but along dimension 0, the array at index 0 has size 256 and the array at index 3 has size 0
+                    # self.times += timestamps
+                    newtimestamps = np.float64(np.arange(len(timestamps)))
+                    newtimestamps /= 256.0 #self.fs_speed
+
+                    newtimestamps += self.times[-1] + 1.0 / 256 #self.fs_speed
+                    self.times = newtimestamps
+                    self.times256 = np.append(self.times256,self.times)
+                    
                     nb_pull +=1
                     if nb_pull == self.preprocess_every:
                         print('Full message')
+
+                        #MODIF
+                        for i in range(len([signal_clean_TP9,signal_clean_AF7,signal_clean_AF8,signal_clean_TP10])):
+                            if [signal_clean_TP9,signal_clean_AF7,signal_clean_AF8,signal_clean_TP10][i] == []:
+                                [signal_clean_TP9,signal_clean_AF7,signal_clean_AF8,signal_clean_TP10][i] = np.zeros(256)
+                                
+                        print(np.column_stack([signal_clean_TP9,signal_clean_AF7,signal_clean_AF8,signal_clean_TP10]),self.times256)
+                        # record(np.column_stack([signal_clean_TP9,signal_clean_AF7,signal_clean_AF8,signal_clean_TP10]),self.times256)
+                        self.times256 = []
+
                         # [signal_clean_TP9,signal_clean_AF7,signal_clean_AF8,signal_clean_TP10] = self.preprocess(self.data)
                         nb_pull = 0
                     else:
-                        sleep(0.08)
+                        sleep(0.12)
                 
 
         except RuntimeError as e:
@@ -156,7 +175,7 @@ class StreamCleanDataOSC():
 
     def preprocess(self, matrix_data):
         # Data preparation
-        data = np.reshape(matrix_data, (256, 4)) # bcz 5 different channel of data (change 4 -> 5 like in OpenVibe) 4 channels for csv files from Louise
+        data = np.reshape(matrix_data, (256, 5)) # bcz 5 different channel of data (change 4 -> 5 like in OpenVibe) 4 channels for csv files from Louise
         TP9_data = data[:,0]
         AF7_data = data[:,1]
         AF8_data = data[:,2]
@@ -169,59 +188,59 @@ class StreamCleanDataOSC():
         if self.connection_quality_channels[0] < 3: # TP9
             signal_clean_TP9 = self.preprocessing(TP9_data,False) # Preprocessing
         else:
-            signal_clean_TP9 = np.zeros(256)
-            # signal_clean_TP9 = []
+            # signal_clean_TP9 = np.zeros(256)
+            signal_clean_TP9 = []
 
         if self.connection_quality_channels[1] < 3: # AF7
             signal_clean_AF7 = self.preprocessing(AF7_data,False) # Preprocessing
         else:
-            signal_clean_AF7 = np.zeros(256)
-            # signal_clean_AF7 = []
+            # signal_clean_AF7 = np.zeros(256)
+            signal_clean_AF7 = []
 
         if self.connection_quality_channels[2] < 3: # AF8
             signal_clean_AF8 = self.preprocessing(AF8_data,False) # Preprocessing
         else:
-            signal_clean_AF8 = np.zeros(256)
-            # signal_clean_AF8 = []
+            # signal_clean_AF8 = np.zeros(256)
+            signal_clean_AF8 = []
 
         if self.connection_quality_channels[3] < 3: # TP10
             signal_clean_TP10 = self.preprocessing(TP10_data,False) # Preprocessing
         else:
-            signal_clean_TP10 = np.zeros(256)
-            # signal_clean_TP10 = []
+            # signal_clean_TP10 = np.zeros(256)
+            signal_clean_TP10 = []
         
         return signal_clean_TP9,signal_clean_AF7,signal_clean_AF8,signal_clean_TP10
 
     def process(self,signal_clean_TP9,signal_clean_AF7,signal_clean_AF8,signal_clean_TP10):
 
         nb_good_sensors = 0
-        # if signal_clean_TP9 != []: # TP9
-        if signal_clean_TP9 != np.zeros(256): # TP9
+        if signal_clean_TP9 != []: # TP9
+        # if signal_clean_TP9 != np.zeros(256): # TP9
             [deltaTP9, thetaTP9, alphaTP9, betaTP9, gammaTP9] = self.frequency_bands_separation(signal_clean_TP9)# frequency bands separation
             nb_good_sensors += 1
         else:
-            [deltaTP9, thetaTP9, alphaTP9, betaTP9, gammaTP9] = float([0,0,0,0,0])
+            [deltaTP9, thetaTP9, alphaTP9, betaTP9, gammaTP9] = [0,0,0,0,0]
 
-        # if signal_clean_AF7 != []: # AF7
-        if signal_clean_AF7 != np.zeros(256): # AF7
+        if signal_clean_AF7 != []: # AF7
+        # if signal_clean_AF7 != np.zeros(256): # AF7
             [deltaAF7, thetaAF7, alphaAF7, betaAF7, gammaAF7] = self.frequency_bands_separation(signal_clean_AF7)# frequency bands separation
             nb_good_sensors += 1
         else:
-            [deltaAF7, thetaAF7, alphaAF7, betaAF7, gammaAF7] = float([0,0,0,0,0])
+            [deltaAF7, thetaAF7, alphaAF7, betaAF7, gammaAF7] = [0,0,0,0,0]
 
-        # if signal_clean_AF8 != []: # AF8
-        if signal_clean_AF8 != np.zeros(256): # AF8
+        if signal_clean_AF8 != []: # AF8
+        # if signal_clean_AF8 != np.zeros(256): # AF8
             [deltaAF8, thetaAF8, alphaAF8, betaAF8, gammaAF8] = self.frequency_bands_separation(signal_clean_AF8)# frequency bands separation
             nb_good_sensors += 1
         else:
-            [deltaAF8, thetaAF8, alphaAF8, betaAF8, gammaAF8] = float([0,0,0,0,0])
+            [deltaAF8, thetaAF8, alphaAF8, betaAF8, gammaAF8] = [0,0,0,0,0]
 
-        # if signal_clean_TP10 != []: # TP10
-        if signal_clean_TP10 != np.zeros(256): # TP10
+        if signal_clean_TP10 != []: # TP10
+        # if signal_clean_TP10 != np.zeros(256): # TP10
             [deltaTP10, thetaTP10, alphaTP10, betaTP10, gammaTP10] = self.frequency_bands_separation(signal_clean_TP10)# frequency bands separation
             nb_good_sensors += 1
         else:
-            [deltaTP10, thetaTP10, alphaTP10, betaTP10, gammaTP10] = float([0,0,0,0,0])
+            [deltaTP10, thetaTP10, alphaTP10, betaTP10, gammaTP10] = [0,0,0,0,0]
         
         if nb_good_sensors != 0:
             delta = (deltaTP9+deltaAF7+deltaAF8+deltaTP10)/nb_good_sensors
@@ -248,33 +267,33 @@ class StreamCleanDataOSC():
 
         # Send data on UDP port (protocol OSC)
         # print ([delta,theta,alpha,beta,gamma])
-        message_array = osc_message_builder.OscMessageBuilder(address = '/mean')
-        message_array2 = osc_message_builder.OscMessageBuilder(address = '/allwaves')
+        # message_array = osc_message_builder.OscMessageBuilder(address = '/mean')
+        # message_array2 = osc_message_builder.OscMessageBuilder(address = '/allwaves')
 
-        message_array.add_arg(delta)
-        message_array.add_arg(theta)
-        message_array.add_arg(alpha)
-        message_array.add_arg(beta)
-        message_array.add_arg(gamma)
+        # message_array.add_arg(delta)
+        # message_array.add_arg(theta)
+        # message_array.add_arg(alpha)
+        # message_array.add_arg(beta)
+        # message_array.add_arg(gamma)
 
-        for i in self.connection_quality_channels:
-            message_array.add_arg(i)
-        for i in [current_delta_max, current_theta_max, current_alpha_max, current_beta_max, current_gamma_max]:
-            message_array.add_arg(i)
+        # for i in self.connection_quality_channels:
+        #     message_array.add_arg(i)
+        # for i in [current_delta_max, current_theta_max, current_alpha_max, current_beta_max, current_gamma_max]:
+        #     message_array.add_arg(i)
 
-        for i in [deltaTP9, thetaTP9, alphaTP9, betaTP9, gammaTP9]:
-            message_array2.add_arg(i)
-        for i in [deltaAF7, thetaAF7, alphaAF7, betaAF7, gammaAF7]:
-            message_array2.add_arg(i)
-        for i in [deltaAF8, thetaAF8, alphaAF8, betaAF8, gammaAF8]:
-            message_array2.add_arg(i)
-        for i in [deltaTP10, thetaTP10, alphaTP10, betaTP10, gammaTP10]:
-            message_array2.add_arg(i)
+        # for i in [deltaTP9, thetaTP9, alphaTP9, betaTP9, gammaTP9]:
+        #     message_array2.add_arg(i)
+        # for i in [deltaAF7, thetaAF7, alphaAF7, betaAF7, gammaAF7]:
+        #     message_array2.add_arg(i)
+        # for i in [deltaAF8, thetaAF8, alphaAF8, betaAF8, gammaAF8]:
+        #     message_array2.add_arg(i)
+        # for i in [deltaTP10, thetaTP10, alphaTP10, betaTP10, gammaTP10]:
+        #     message_array2.add_arg(i)
        
-        message_array.build()
-        message_array2.build()
-        client.send(message_array.build())
-        client.send(message_array2.build())
+        # message_array.build()
+        # message_array2.build()
+        # client.send(message_array.build())
+        # client.send(message_array2.build())
         # print(time())
 
 

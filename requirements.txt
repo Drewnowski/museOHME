@@ -2,3 +2,7 @@ pylsl
 numpy
 scipy
 python-osc
+pandas
+scikit-learn
+tk
+tensorflow
