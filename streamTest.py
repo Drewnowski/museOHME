@@ -11,6 +11,12 @@ from pythonosc import osc_message_builder
 
 from utils import highest_value
 
+# features
+import csv
+import os, sys
+import numpy as np
+from features_generation import generate_feature_vectors_from_samples
+
 # Create UDP client
 client = udp_client.UDPClient('192.168.1.255',9998,  True)
 
@@ -19,6 +25,8 @@ current_theta_max = 0.0
 current_alpha_max = 0.0
 current_beta_max = 0.0
 current_gamma_max = 0.0
+FINAL_MATRIX = None
+output_file = "data_generated.csv"
 
 def streamCleanData():
 
@@ -67,7 +75,9 @@ class StreamCleanDataOSC():
                     self.process(signal_clean_TP9,signal_clean_AF7,signal_clean_AF8,signal_clean_TP10)
                     nb_pull +=1
                     if nb_pull == self.preprocess_every:
-                        print('Full message')
+                        # print(self.data[:,:4])
+                        gen_training_matrix(self.data[:,:4])
+                        # print('Full message')
                         # [signal_clean_TP9,signal_clean_AF7,signal_clean_AF8,signal_clean_TP10] = self.preprocess(self.data)
                         nb_pull = 0
                     else:
@@ -236,38 +246,81 @@ class StreamCleanDataOSC():
         current_beta_max = highest_value(beta, current_beta_max)
         current_gamma_max = highest_value(gamma, current_gamma_max)
 
-        # Send data on UDP port (protocol OSC)
+        # =============== Send data on UDP port (protocol OSC) ===========
         # print ([delta,theta,alpha,beta,gamma])
 
-        message_array = osc_message_builder.OscMessageBuilder(address = '/mean')
-        message_array2 = osc_message_builder.OscMessageBuilder(address = '/allwaves')
+        # message_array = osc_message_builder.OscMessageBuilder(address = '/mean')
+        # message_array2 = osc_message_builder.OscMessageBuilder(address = '/allwaves')
 
-        message_array.add_arg(delta)
-        message_array.add_arg(theta)
-        message_array.add_arg(alpha)
-        message_array.add_arg(beta)
-        message_array.add_arg(gamma)
-        for i in self.connection_quality_channels:
-            message_array.add_arg(i)
-        for i in [current_delta_max, current_theta_max, current_alpha_max, current_beta_max, current_gamma_max]:
-            message_array.add_arg(i)
+        # message_array.add_arg(delta)
+        # message_array.add_arg(theta)
+        # message_array.add_arg(alpha)
+        # message_array.add_arg(beta)
+        # message_array.add_arg(gamma)
+        # for i in self.connection_quality_channels:
+        #     message_array.add_arg(i)
+        # for i in [current_delta_max, current_theta_max, current_alpha_max, current_beta_max, current_gamma_max]:
+        #     message_array.add_arg(i)
         
-        for i in [deltaTP9, thetaTP9, alphaTP9, betaTP9, gammaTP9]:
-            message_array2.add_arg(i)
-        for i in [deltaAF7, thetaAF7, alphaAF7, betaAF7, gammaAF7]:
-            message_array2.add_arg(i)
-        for i in [deltaAF8, thetaAF8, alphaAF8, betaAF8, gammaAF8]:
-            message_array2.add_arg(i)
-        for i in [deltaTP10, thetaTP10, alphaTP10, betaTP10, gammaTP10]:
-            message_array2.add_arg(i)
+        # for i in [deltaTP9, thetaTP9, alphaTP9, betaTP9, gammaTP9]:
+        #     message_array2.add_arg(i)
+        # for i in [deltaAF7, thetaAF7, alphaAF7, betaAF7, gammaAF7]:
+        #     message_array2.add_arg(i)
+        # for i in [deltaAF8, thetaAF8, alphaAF8, betaAF8, gammaAF8]:
+        #     message_array2.add_arg(i)
+        # for i in [deltaTP10, thetaTP10, alphaTP10, betaTP10, gammaTP10]:
+        #     message_array2.add_arg(i)
        
-        message_array.build()
-        message_array2.build()
-        client.send(message_array.build())
-        client.send(message_array2.build())
+        # message_array.build()
+        # message_array2.build()
+        # client.send(message_array.build())
+        # client.send(message_array2.build())
         # print(time())
 
 
 
+
+
+
+def gen_training_matrix(data):
+
+    vectors, headers = generate_feature_vectors_from_samples(data = data, nsamples = 256, period = 1., state = 5, remove_redundant = True, cols_to_ignore = None)
+
+    # if FINAL_MATRIX is None:
+    #     FINAL_MATRIX = vectors
+    # else:
+    #     FINAL_MATRIX = np.vstack( [ FINAL_MATRIX, vectors ] )
+
+
+    # print ('FINAL_MATRIX', FINAL_MATRIX.shape)
+
+    # np.random.shuffle(FINAL_MATRIX)
+    
+    # np.savetxt("data_generated.csv", FINAL_MATRIX, delimiter = ',',header = ','.join(header),comments = '')
+    filename = "record001.csv"
+    if not os.path.isfile(filename):
+        f = open ("record001.csv",'a+')
+        for i in range(len(headers)):
+            f.write(str(headers[i]) + ",")
+        f.write("\n")
+    else:
+        f = open ("record001.csv",'a+')
+        for i in vectors:
+            f.write(str(i) + ",")
+        # f.write(str(vectors))
+        f.write("\n")
+
+    
+    # print(vectors.shape)
+
+
+    
+    print("done")
+    return None
+
 # Run teh stream
 streamCleanData()
+
+# gen_training_matrix(directory_path, output_file, cols_to_ignore = -1)
+
+
