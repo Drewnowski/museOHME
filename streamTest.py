@@ -4,6 +4,7 @@ from threading import Thread
 import numpy as np
 from scipy.signal import butter,filtfilt,detrend,iirnotch,welch
 from time import sleep,time
+import msvcrt # check if key pressed
 
 #osc import
 from pythonosc import udp_client
@@ -25,7 +26,10 @@ current_theta_max = 0.0
 current_alpha_max = 0.0
 current_beta_max = 0.0
 current_gamma_max = 0.0
-FINAL_MATRIX = None
+
+filename = "dataset001.csv"
+filename_clean = "dataset_clean001.csv"
+
 output_file = "data_generated.csv"
 
 def streamCleanData():
@@ -61,24 +65,42 @@ class StreamCleanDataOSC():
 
 
     def update_OSCstream(self):
+        global filename
+        global filename_clean
         nb_pull = 0
         signal_clean_TP9,signal_clean_AF7,signal_clean_AF8,signal_clean_TP10 = [[],[],[],[]]
         try:
             while self.started:
-
+                # samples in this case (32,5)
                 samples, timestamps = self.inlet.pull_chunk(timeout=1.0, max_samples=self.fs_speed)#256
                 
                 if timestamps:
+                    # stack all chunk of data to a 2D array (256,5)  
                     self.data = np.vstack([self.data, samples])
                     self.data = self.data[-256:]
+                    # preprocess the data in order to have only clean values   
                     [signal_clean_TP9,signal_clean_AF7,signal_clean_AF8,signal_clean_TP10] = self.preprocess(self.data)
+                    # compute the brainwaves with cleand data
                     self.process(signal_clean_TP9,signal_clean_AF7,signal_clean_AF8,signal_clean_TP10)
+                    
+                    
+                    
                     nb_pull +=1
                     if nb_pull == self.preprocess_every:
-                        # print(self.data[:,:4])
-                        gen_training_matrix(self.data[:,:4])
-                        # print('Full message')
-                        # [signal_clean_TP9,signal_clean_AF7,signal_clean_AF8,signal_clean_TP10] = self.preprocess(self.data)
+                        # reshape clean data to (256,4)
+                        my_array = np.array([signal_clean_TP9,signal_clean_AF7,signal_clean_AF8,signal_clean_TP10])
+                        clean_data = my_array.reshape(256,4)
+                        # ===== RECORD FEATURES =====
+                        # Check if a key has been pressed
+                        if msvcrt.kbhit():
+                            # Read the key that was pressed
+                            key = msvcrt.getch().decode('utf-8')
+                            # state (0 = neutral, 1 = concentrating, 2 = relaxed, 3 = blink, 4 = jaw_movement)
+                            if key == '0' or key == '1' or key == '2' or key == '3' or key == '4': 
+                                gen_training_matrix(self.data[:,:4],key,filename)
+                                gen_training_matrix(clean_data,key,filename_clean)
+                        # =====
+                        
                         nb_pull = 0
                     else:
                         sleep(0.12) # 256/32 = 8 -> 100ms/8 = 12.5ms
@@ -98,7 +120,7 @@ class StreamCleanDataOSC():
         val = np.std(signal)
         if val < 20:
             return 1
-        elif val < 30:
+        elif val < 80:
             return 2
         else:
             return 3
@@ -174,51 +196,55 @@ class StreamCleanDataOSC():
         if self.connection_quality_channels[0] < 3: # TP9
             signal_clean_TP9 = self.preprocessing(TP9_data,False) # Preprocessing
         else:
-            # signal_clean_TP9 = np.zeros(256)
-            signal_clean_TP9 = []
+            signal_clean_TP9 = np.zeros(256)
+            # signal_clean_TP9 = []
 
         if self.connection_quality_channels[1] < 3: # AF7
             signal_clean_AF7 = self.preprocessing(AF7_data,False) # Preprocessing
         else:
-            # signal_clean_AF7 = np.zeros(256)
-            signal_clean_AF7 = []
+            signal_clean_AF7 = np.zeros(256)
+            # signal_clean_AF7 = []
 
         if self.connection_quality_channels[2] < 3: # AF8
             signal_clean_AF8 = self.preprocessing(AF8_data,False) # Preprocessing
         else:
-            # signal_clean_AF8 = np.zeros(256)
-            signal_clean_AF8 = []
+            signal_clean_AF8 = np.zeros(256)
+            # signal_clean_AF8 = []
 
         if self.connection_quality_channels[3] < 3: # TP10
             signal_clean_TP10 = self.preprocessing(TP10_data,False) # Preprocessing
         else:
-            # signal_clean_TP10 = np.zeros(256)
-            signal_clean_TP10 = []
+            signal_clean_TP10 = np.zeros(256)
+            # signal_clean_TP10 = []
         
         return signal_clean_TP9,signal_clean_AF7,signal_clean_AF8,signal_clean_TP10
 
     def process(self,signal_clean_TP9,signal_clean_AF7,signal_clean_AF8,signal_clean_TP10):
 
         nb_good_sensors = 0
-        if signal_clean_TP9 != []: # TP9
+        # if signal_clean_TP9 != []: # TP9
+        if not all(element == 0 for element in signal_clean_TP9):
             [deltaTP9, thetaTP9, alphaTP9, betaTP9, gammaTP9] = self.frequency_bands_separation(signal_clean_TP9)# frequency bands separation
             nb_good_sensors += 1
         else:
             [deltaTP9, thetaTP9, alphaTP9, betaTP9, gammaTP9] = [0,0,0,0,0]
 
-        if signal_clean_AF7 != []: # AF7
+        # if signal_clean_AF7 != []: # AF7
+        if not all(element == 0 for element in signal_clean_AF7):
             [deltaAF7, thetaAF7, alphaAF7, betaAF7, gammaAF7] = self.frequency_bands_separation(signal_clean_AF7)# frequency bands separation
             nb_good_sensors += 1
         else:
             [deltaAF7, thetaAF7, alphaAF7, betaAF7, gammaAF7] = [0,0,0,0,0]
 
-        if signal_clean_AF8 != []: # AF8
+        # if signal_clean_AF8 != []: # AF8
+        if not all(element == 0 for element in signal_clean_AF8):
             [deltaAF8, thetaAF8, alphaAF8, betaAF8, gammaAF8] = self.frequency_bands_separation(signal_clean_AF8)# frequency bands separation
             nb_good_sensors += 1
         else:
             [deltaAF8, thetaAF8, alphaAF8, betaAF8, gammaAF8] = [0,0,0,0,0]
 
-        if signal_clean_TP10 != []: # TP10
+        # if signal_clean_TP10 != []: # TP10
+        if not all(element == 0 for element in signal_clean_TP10):
             [deltaTP10, thetaTP10, alphaTP10, betaTP10, gammaTP10] = self.frequency_bands_separation(signal_clean_TP10)# frequency bands separation
             nb_good_sensors += 1
         else:
@@ -226,25 +252,25 @@ class StreamCleanDataOSC():
         
         if nb_good_sensors != 0:
             delta = (deltaTP9+deltaAF7+deltaAF8+deltaTP10)/nb_good_sensors
-            theta = (thetaTP9 +thetaAF7+thetaAF8+thetaTP10)/nb_good_sensors 
-            alpha = (alphaTP9 + alphaAF7+alphaAF8+alphaTP10)/nb_good_sensors
+            theta = (thetaTP9+thetaAF7+thetaAF8+thetaTP10)/nb_good_sensors 
+            alpha = (alphaTP9+alphaAF7+alphaAF8+alphaTP10)/nb_good_sensors
             beta = (betaTP9+betaAF7+betaAF8+betaTP10)/nb_good_sensors
             gamma = (gammaTP9+gammaAF7+gammaAF8+gammaTP10)/nb_good_sensors
         else:
             delta, theta, alpha, beta, gamma = 0,0,0,0,0
 
-        # find the maximum
-        global current_delta_max
-        global current_theta_max 
-        global current_alpha_max
-        global current_beta_max 
-        global current_gamma_max
+        # ===== find the maximum =====
+        # global current_delta_max
+        # global current_theta_max 
+        # global current_alpha_max
+        # global current_beta_max 
+        # global current_gamma_max
         
-        current_delta_max = highest_value(delta, current_delta_max)
-        current_theta_max = highest_value(theta, current_theta_max)
-        current_alpha_max = highest_value(alpha, current_alpha_max)
-        current_beta_max = highest_value(beta, current_beta_max)
-        current_gamma_max = highest_value(gamma, current_gamma_max)
+        # current_delta_max = highest_value(delta, current_delta_max)
+        # current_theta_max = highest_value(theta, current_theta_max)
+        # current_alpha_max = highest_value(alpha, current_alpha_max)
+        # current_beta_max = highest_value(beta, current_beta_max)
+        # current_gamma_max = highest_value(gamma, current_gamma_max)
 
         # =============== Send data on UDP port (protocol OSC) ===========
         # print ([delta,theta,alpha,beta,gamma])
@@ -282,45 +308,30 @@ class StreamCleanDataOSC():
 
 
 
-def gen_training_matrix(data):
+def gen_training_matrix(data,state,filename):
 
-    vectors, headers = generate_feature_vectors_from_samples(data = data, nsamples = 256, period = 1., state = 5, remove_redundant = True, cols_to_ignore = None)
+    # ===== generate faetures =====
+    vectors, headers = generate_feature_vectors_from_samples(data = data, nsamples = 256, state = state) 
 
-    # if FINAL_MATRIX is None:
-    #     FINAL_MATRIX = vectors
-    # else:
-    #     FINAL_MATRIX = np.vstack( [ FINAL_MATRIX, vectors ] )
-
-
-    # print ('FINAL_MATRIX', FINAL_MATRIX.shape)
-
-    # np.random.shuffle(FINAL_MATRIX)
-    
-    # np.savetxt("data_generated.csv", FINAL_MATRIX, delimiter = ',',header = ','.join(header),comments = '')
-    filename = "record001.csv"
+    # ===== Save features to csv file =====
     if not os.path.isfile(filename):
-        f = open ("record001.csv",'a+')
+        f = open (filename,'a+')
         for i in range(len(headers)):
             f.write(str(headers[i]) + ",")
         f.write("\n")
-    else:
-        f = open ("record001.csv",'a+')
         for i in vectors:
             f.write(str(i) + ",")
-        # f.write(str(vectors))
         f.write("\n")
-
+    else:
+        f = open (filename,'a+')
+        for i in vectors:
+            f.write(str(i) + ",")
+        f.write("\n")
     
-    # print(vectors.shape)
-
-
-    
-    print("done")
+    print("saved")
     return None
 
-# Run teh stream
+# Run the software
 streamCleanData()
-
-# gen_training_matrix(directory_path, output_file, cols_to_ignore = -1)
 
 

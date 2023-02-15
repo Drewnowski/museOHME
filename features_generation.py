@@ -8,50 +8,6 @@ import numpy as np
 import scipy
 import scipy.signal
 
-def matrix_from_csv_file(file_path):
-	"""
-	Returns the data matrix given the path of a CSV file.
-	
-	Parameters:
-		file_path (str): path for the CSV file with a time stamp in the first column
-			and the signals in the subsequent ones.
-			Time stamps are in seconds, with millisecond precision
-
-    Returns:
-		numpy.ndarray: 2D matrix containing the data read from the CSV
-	"""
-	
-	csv_data = np.genfromtxt(file_path, delimiter = ',')
-	full_matrix = csv_data[1:]
-	#headers = csv_data[0] # Commented since not used or returned 
-	
-	return full_matrix
-
-
-def get_time_slice(full_matrix, start = 0., period = 1.):
-	"""
-	Returns a slice of the given matrix, where start is the offset and period is 
-	used to specify the length of the signal.
-	
-	Parameters:
-		full_matrix (numpy.ndarray): matrix returned by matrix_from_csv()
-		start (float): start point (in seconds after the beginning of records) 
-		period (float): duration of the slice to be extracted (in seconds)
-
-	Returns:
-		numpy.ndarray: 2D matrix with the desired slice of the matrix
-		float: actual length of the resulting time slice
-		
-	"""
-	
-	# Changed for greater efficiency [fcampelo]
-	rstart  = full_matrix[0, 0] + start
-	index_0 = np.max(np.where(full_matrix[:, 0] <= rstart))
-	index_1 = np.max(np.where(full_matrix[:, 0] <= rstart + period))
-	
-	duration = full_matrix[index_1, 0] - full_matrix[index_0, 0]
-	return full_matrix[index_0:index_1, :], duration
-
 
 def feature_mean(matrix):
 	"""
@@ -722,10 +678,7 @@ samples: size of the resampled vector
 period: period of the time used to compute feature vectors
 state: label for the feature vector
 """
-def generate_feature_vectors_from_samples(data, nsamples, period, 
-										  state = None, 
-										  remove_redundant = True,
-										  cols_to_ignore = None):
+def generate_feature_vectors_from_samples(data, nsamples, state):
 	"""
 	Reads data from CSV file in "file_path" and extracts statistical features 
 	for each time window of width "period". 
@@ -776,7 +729,7 @@ def generate_feature_vectors_from_samples(data, nsamples, period,
 	# current time slice and those of the previous one.
 	# If there was no previous vector we just set it and continue 
 	# with the next vector.
-	features, headers = calc_feature_vector(data, None)
+	features, headers = calc_feature_vector(data, state)
 	
 	
 	# Initialise empty return object
