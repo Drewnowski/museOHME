@@ -4,6 +4,7 @@ from threading import Thread
 import numpy as np
 from scipy.signal import butter,filtfilt,detrend,iirnotch,welch
 from time import sleep,time
+from datetime import datetime
 import msvcrt # check if key pressed
 
 #osc import
@@ -31,6 +32,9 @@ filename = "dataset001.csv"
 filename_clean = "dataset_clean001.csv"
 
 output_file = "data_generated.csv"
+recording = 0
+start_time = time()
+duration_time = 0
 
 def streamCleanData():
 
@@ -60,13 +64,15 @@ class StreamCleanDataOSC():
         self.n_chan = info.channel_count()
         self.preprocess_every = int(256/self.fs_speed)
         self.data = np.zeros((256, self.n_chan))
+        self.times = np.zeros(self.fs_speed)
+        self.times256 = []
 
         self.connection_quality_channels = [3,3,3,3]
 
 
     def update_OSCstream(self):
-        global filename
-        global filename_clean
+        global filename,filename_clean
+        
         nb_pull = 0
         signal_clean_TP9,signal_clean_AF7,signal_clean_AF8,signal_clean_TP10 = [[],[],[],[]]
         try:
@@ -78,6 +84,14 @@ class StreamCleanDataOSC():
                     # stack all chunk of data to a 2D array (256,5)  
                     self.data = np.vstack([self.data, samples])
                     self.data = self.data[-256:]
+                    # rearange timstemps
+                    newtimestamps = np.float64(np.arange(len(timestamps)))
+                    newtimestamps /= 256.0 #self.fs_speed
+
+                    newtimestamps += self.times[-1] + 1.0 / 256 #self.fs_speed
+                    self.times = newtimestamps
+                    self.times256 = np.append(self.times256,self.times)
+                    
                     # preprocess the data in order to have only clean values   
                     [signal_clean_TP9,signal_clean_AF7,signal_clean_AF8,signal_clean_TP10] = self.preprocess(self.data)
                     # compute the brainwaves with cleand data
@@ -87,20 +101,49 @@ class StreamCleanDataOSC():
                     
                     nb_pull +=1
                     if nb_pull == self.preprocess_every:
+                        # Append the 2D array horizontally to the 1D array:
+                        data_tampstamped = np.hstack((np.atleast_2d(self.times256).T,self.data))
+                        # print(data_tampstamped)
+
+                        self.times256 = []
                         # reshape clean data to (256,4)
                         my_array = np.array([signal_clean_TP9,signal_clean_AF7,signal_clean_AF8,signal_clean_TP10])
                         clean_data = my_array.reshape(256,4)
                         # ===== RECORD FEATURES =====
                         # Check if a key has been pressed
                         if msvcrt.kbhit():
+                            global recording,start_time,duration_time
                             # Read the key that was pressed
                             key = msvcrt.getch().decode('utf-8')
                             # state (0 = neutral, 1 = concentrating, 2 = relaxed, 3 = blink, 4 = jaw_movement)
                             if key == '0' or key == '1' or key == '2' or key == '3' or key == '4': 
                                 gen_training_matrix(self.data[:,:4],key,filename)
                                 gen_training_matrix(clean_data,key,filename_clean)
-                        # =====
                         
+                                # ===== Recod raw ====
+                                
+                                # update time vars
+                                
+                                if not recording:
+                                    start_time = time()
+                                    current_time = datetime.now()
+                                    time_str = current_time.strftime("%Y-%m-%d_%H-%M-%S")
+                                
+                                if key == 0:
+                                    duration_time = 5
+                                elif key == 1 or key == 2:
+                                    duration_time = 10
+                                else:
+                                    duration_time = 3
+
+                        end_time = time()
+                        if(end_time - start_time) <= duration_time:
+                            print(end_time - start_time)
+                            recording = 1
+                            record_raw_data(data_tampstamped,key,time_str,1)
+                        else:
+                            recording = 0
+                        # =====
                         nb_pull = 0
                     else:
                         sleep(0.12) # 256/32 = 8 -> 100ms/8 = 12.5ms
@@ -304,8 +347,30 @@ class StreamCleanDataOSC():
         # print(time())
 
 
+def record_raw_data(data,current_event,time_str,marker):
+    end_time = time()
+    header = ['timestamp','TP9','AF7','AF8','TP10','Marker']
+    
 
-
+    # if(end_time - start_time) >= duration_time:
+    current_file = "dataset_raw" + current_event + '_' + time_str + '.csv'
+    # print(data)
+    if not os.path.isfile(current_file):
+        f = open (current_file,'w',newline='')
+        for i in range(len(header)):
+            f.write(str(header[i]) + ",")
+        f.write("\n")
+        writer = csv.writer(f)
+        for row in data:
+            writer.writerow(row)
+        f.write("\n")
+    else:
+        f = open (current_file,'w',newline='')
+        writer = csv.writer(f)
+        for row in data:
+            writer.writerow(row)
+        f.write("\n")
+    f.close()
 
 
 def gen_training_matrix(data,state,filename):
