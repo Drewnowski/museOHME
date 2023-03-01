@@ -4,7 +4,9 @@ from threading import Thread
 import numpy as np
 from scipy.signal import butter,filtfilt,detrend,iirnotch,welch
 from time import sleep,time
+import winsound
 from datetime import datetime
+import tensorflow as tf
 import msvcrt # check if key pressed
 
 #osc import
@@ -28,13 +30,17 @@ current_alpha_max = 0.0
 current_beta_max = 0.0
 current_gamma_max = 0.0
 
-filename = "dataset001.csv"
-filename_clean = "dataset_clean001.csv"
+filename = "dataset_features/features_raw001.csv"
+filename_clean = "dataset_features/features_clean001.csv"
+path_ai_model = "models/ei-eeg-classifier-tensorflow-lite-float32-model.lite"
 
 output_file = "data_generated.csv"
+
+confidence_threshold = 0.6                                      # default in Edge Impulse is 0.6
 recording = 0
 start_time = time()
 duration_time = 0
+marker_time = 0
 
 def streamCleanData():
 
@@ -53,10 +59,9 @@ def streamCleanData():
     
 
 class StreamCleanDataOSC():
-    def __init__(self, stream, dejitter=True):
+    def __init__(self, stream):
         """Init"""
         self.stream = stream
-        self.dejitter = dejitter
         self.fs_speed = 32
         self.inlet = StreamInlet(stream, max_chunklen=256)
         info = self.inlet.info()
@@ -101,6 +106,7 @@ class StreamCleanDataOSC():
                     
                     nb_pull +=1
                     if nb_pull == self.preprocess_every:
+                        # print("pull 256 samples")
                         # Append the 2D array horizontally to the 1D array:
                         data_tampstamped = np.hstack((np.atleast_2d(self.times256).T,self.data))
                         # print(data_tampstamped)
@@ -112,35 +118,49 @@ class StreamCleanDataOSC():
                         # ===== RECORD FEATURES =====
                         # Check if a key has been pressed
                         if msvcrt.kbhit():
-                            global recording,start_time,duration_time
+                            global recording,start_time,duration_time,marker_time
                             # Read the key that was pressed
                             key = msvcrt.getch().decode('utf-8')
                             # state (0 = neutral, 1 = concentrating, 2 = relaxed, 3 = blink, 4 = jaw_movement)
                             if key == '0' or key == '1' or key == '2' or key == '3' or key == '4': 
-                                gen_training_matrix(self.data[:,:4],key,filename)
-                                gen_training_matrix(clean_data,key,filename_clean)
-                        
-                                # ===== Recod raw ====
                                 
                                 # update time vars
-                                
                                 if not recording:
                                     start_time = time()
                                     current_time = datetime.now()
-                                    time_str = current_time.strftime("%Y-%m-%d_%H-%M-%S")
-                                
-                                if key == 0:
-                                    duration_time = 5
-                                elif key == 1 or key == 2:
-                                    duration_time = 10
-                                else:
-                                    duration_time = 3
+                                    time_str = current_time.strftime("Bart-%Y-%m-%d_%H-%M-%S")
+                                    beep = 1
 
+                                if key == "0":
+                                    marker_time = nan
+                                    duration_time = 15
+                                elif key == "1" or key == "2":
+                                    duration_time = 30
+                                    marker_time = 15
+                                else:
+                                    duration_time = 5
+                                    marker_time = 1
+                        # ===== Recod raw ====
                         end_time = time()
+                        # print(end_time - start_time)
                         if(end_time - start_time) <= duration_time:
-                            print(end_time - start_time)
                             recording = 1
-                            record_raw_data(data_tampstamped,key,time_str,1)
+                            if(end_time - start_time) >= marker_time:
+                                marker = 1
+                                if beep:
+                                    # marker = 1
+                                    duration = 800  # milliseconds
+                                    freq = 440  # Hz
+                                    beep_thread = Thread(target=play_beep, args=(freq, duration))
+                                    beep_thread.start()
+                                    beep = 0
+                                # else:
+                                #     marker = 0
+                            else:
+                                marker = 0
+                            gen_training_matrix(self.data[:,:4],key,filename,marker,time_str)
+                            gen_training_matrix(clean_data,key,filename_clean,marker,time_str)
+                            record_raw_data(data_tampstamped,key,time_str,marker)
                         else:
                             recording = 0
                         # =====
@@ -235,7 +255,7 @@ class StreamCleanDataOSC():
         # Create a list of connection quality of each channel
         self.connection_quality_channels = [self.connectionQuality(TP9_data),self.connectionQuality(AF7_data),self.connectionQuality(AF8_data),self.connectionQuality(TP10_data)]
         # Check if at least one sensor is good
-
+        print(self.connection_quality_channels)
         if self.connection_quality_channels[0] < 3: # TP9
             signal_clean_TP9 = self.preprocessing(TP9_data,False) # Preprocessing
         else:
@@ -346,57 +366,129 @@ class StreamCleanDataOSC():
         # client.send(message_array2.build())
         # print(time())
 
+def play_beep(freq, duration):
+    winsound.Beep(freq, duration)
 
 def record_raw_data(data,current_event,time_str,marker):
-    end_time = time()
-    header = ['timestamp','TP9','AF7','AF8','TP10','Marker']
+    header = ['timestamp','TP9','AF7','AF8','TP10','AUX','Marker']
     
 
     # if(end_time - start_time) >= duration_time:
-    current_file = "dataset_raw" + current_event + '_' + time_str + '.csv'
+    current_file = "dataset_raw_signal/" + current_event + '_' + time_str + '.csv'
     # print(data)
+    new_col = np.full((data.shape[0], 1), marker)
+    data = np.hstack((data, new_col))
     if not os.path.isfile(current_file):
-        f = open (current_file,'w',newline='')
+        # write header and data to new file
+        f = open (current_file,'a',newline='')
         for i in range(len(header)):
             f.write(str(header[i]) + ",")
         f.write("\n")
         writer = csv.writer(f)
         for row in data:
             writer.writerow(row)
-        f.write("\n")
+            # f.write(","+ str(marker))
+        # f.write("\n")
     else:
-        f = open (current_file,'w',newline='')
+        # overwrite existing file with new data
+        f = open (current_file,'a',newline='')
         writer = csv.writer(f)
         for row in data:
             writer.writerow(row)
-        f.write("\n")
+            # f.write(","+ str(marker))
+        # f.write("\n")
     f.close()
 
 
-def gen_training_matrix(data,state,filename):
+def gen_training_matrix(data,state,filename,marker,time_str):
 
     # ===== generate faetures =====
     vectors, headers = generate_feature_vectors_from_samples(data = data, nsamples = 256, state = state) 
 
     # ===== Save features to csv file =====
     if not os.path.isfile(filename):
+        # write header and data to new file
         f = open (filename,'a+')
         for i in range(len(headers)):
             f.write(str(headers[i]) + ",")
+        f.write("Label,Marker,file_name")
         f.write("\n")
         for i in vectors:
             f.write(str(i) + ",")
+        f.write(str(state)+",")
+        f.write(str(marker)+",")
+        f.write(time_str)
         f.write("\n")
     else:
+        # overwrite existing file with new data
         f = open (filename,'a+')
         for i in vectors:
             f.write(str(i) + ",")
+        f.write(str(state)+",")
+        f.write(str(marker)+",")
+        f.write(time_str)
         f.write("\n")
-    
-    print("saved")
+
     return None
 
-# Run the software
+"""
+# *********** Initiates TensorFlow Lite ***********
+def initiate_tf():
+    global interpreter, input_details, output_details
+
+    ####################### TF Lite path and file ######################
+    path = "Models/"
+    lite_file = "ei-muse-blinks-separately-recorded-nn-classifier-tensorflow-lite-float32-model.lite"
+
+    ####################### INITIALIZE TF Lite #########################
+    # Load TFLite model and allocate tensors.
+    interpreter = tf.lite.Interpreter(model_path = path + lite_file)
+
+    # Get input and output tensors.
+    input_details = interpreter.get_input_details()
+    output_details = interpreter.get_output_details()
+
+    # Allocate tensors
+    interpreter.allocate_tensors()
+
+    # Printing input and output details for debug purposes in case anything is not working
+    print (input_details)
+    print(output_details)
+
+
+# ******** INFERENCE ******** 
+def inference():
+    global score, expected, choice, blinks, blinked
+
+    input_samples = np.array(all_samples, dtype=np.float32)
+    input_samples = np.expand_dims(input_samples, axis=0)
+
+    # input_details[0]['index'] = the index which accepts the input
+    interpreter.set_tensor(input_details[0]['index'], input_samples)
+
+    # run the inference
+    interpreter.invoke()
+
+    # output_details[0]['index'] = the index which provides the input
+    output_data = interpreter.get_tensor(output_details[0]['index'])
+
+    # finding output data
+    blink       = output_data[0][0]
+    background  = output_data[0][1]
+
+    # checking if over confidence threshold
+    if blink >= confidence_threshold:
+        choice = "Blink"
+        blinks += 1
+        blinked = True
+    elif background >= confidence_threshold:
+        choice = "Background"
+    else:
+        choice = "----"
+
+    print(f"Blink:{blink:.4f} - Background:{background:.4f}     {choice}          ")
+"""
+# Run the code
 streamCleanData()
 
 
