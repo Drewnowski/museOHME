@@ -5,4 +5,4 @@ python-osc
 pandas
 scikit-learn
 tk
-tensorflow
+tensorflow==2.10
