@@ -5,4 +5,5 @@ python-osc
 pandas
 scikit-learn
 tk
+nltk
 tensorflow==2.10

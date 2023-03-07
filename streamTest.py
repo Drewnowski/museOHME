@@ -8,6 +8,7 @@ import winsound
 from datetime import datetime
 import tensorflow as tf
 import msvcrt # check if key pressed
+from nltk import flatten 
 
 #osc import
 from pythonosc import udp_client
@@ -32,7 +33,7 @@ current_gamma_max = 0.0
 
 filename = "dataset_features/features_raw001.csv"
 filename_clean = "dataset_features/features_clean001.csv"
-path_ai_model = "models/ei-eeg-classifier-tensorflow-lite-float32-model.lite"
+ai_model_path = "models/ei-eeg-classifier-tensorflow-lite-float32-model3.lite"
 
 output_file = "data_generated.csv"
 
@@ -115,6 +116,9 @@ class StreamCleanDataOSC():
                         # reshape clean data to (256,4)
                         my_array = np.array([signal_clean_TP9,signal_clean_AF7,signal_clean_AF8,signal_clean_TP10])
                         clean_data = my_array.reshape(256,4)
+                        # ===== AI classifier   =====
+                        inference(self.data[:,:4])
+
                         # ===== RECORD FEATURES =====
                         # Check if a key has been pressed
                         if msvcrt.kbhit():
@@ -431,18 +435,16 @@ def gen_training_matrix(data,state,filename,marker,time_str):
 
     return None
 
-"""
+
 # *********** Initiates TensorFlow Lite ***********
 def initiate_tf():
-    global interpreter, input_details, output_details
+    global interpreter, input_details, output_details, ai_model_path
 
     ####################### TF Lite path and file ######################
-    path = "Models/"
-    lite_file = "ei-muse-blinks-separately-recorded-nn-classifier-tensorflow-lite-float32-model.lite"
 
     ####################### INITIALIZE TF Lite #########################
     # Load TFLite model and allocate tensors.
-    interpreter = tf.lite.Interpreter(model_path = path + lite_file)
+    interpreter = tf.lite.Interpreter(model_path = ai_model_path)
 
     # Get input and output tensors.
     input_details = interpreter.get_input_details()
@@ -453,15 +455,25 @@ def initiate_tf():
 
     # Printing input and output details for debug purposes in case anything is not working
     print (input_details)
-    print(output_details)
+    # print(output_details)
 
 
 # ******** INFERENCE ******** 
-def inference():
-    global score, expected, choice, blinks, blinked
+def inference(all_samples):
+    global choice
 
-    input_samples = np.array(all_samples, dtype=np.float32)
-    input_samples = np.expand_dims(input_samples, axis=0)
+    # Flatten the array into a 1D array
+    arr_1d = all_samples.ravel() #may work
+    # all_samples = flatten(arr_1d) 
+    # print(arr_1d)
+    input_samples = np.array(arr_1d, dtype=np.float32) #may work
+    input_samples = np.expand_dims(input_samples, axis=0) #may work
+    # print(all_samples)
+    #===== Exemple
+    # test = [13.9985, -0.2576, -0.5537, 2.9149, 2.7317, 3.2369, 2.5349, 1.8408, 1.7954, 1.3283, 1.3328, 5.7935, -0.0174, 0.0268, 2.2021, 1.7871, 2.2485, 2.0555, 1.7070, 1.2183, 1.0431, 0.8177, 9.0692, 0.8261, 0.8312, 2.6412, 2.5027, 2.7554, 2.6118, 2.2087, 1.8644, 1.5261, 1.1835, 10.4281, -0.0459, -0.1172, 2.7407, 2.8306, 2.9857, 2.5295, 1.8870, 1.8773, 1.7035, 1.3773]
+    # input_samples = np.array(test, dtype=np.float32) #may work
+    # input_samples = np.expand_dims(input_samples, axis=0) #may work
+    #====== 
 
     # input_details[0]['index'] = the index which accepts the input
     interpreter.set_tensor(input_details[0]['index'], input_samples)
@@ -473,22 +485,21 @@ def inference():
     output_data = interpreter.get_tensor(output_details[0]['index'])
 
     # finding output data
-    blink       = output_data[0][0]
-    background  = output_data[0][1]
+    normal       = output_data[0][0]
+    relaxed  = output_data[0][1]
 
     # checking if over confidence threshold
-    if blink >= confidence_threshold:
-        choice = "Blink"
-        blinks += 1
-        blinked = True
-    elif background >= confidence_threshold:
-        choice = "Background"
+    if normal >= confidence_threshold:
+        choice = "Normal"
+    elif relaxed >= confidence_threshold:
+        choice = "Relaxed"
     else:
-        choice = "----"
+        choice = "Anomaly"
 
-    print(f"Blink:{blink:.4f} - Background:{background:.4f}     {choice}          ")
-"""
+    print(f"Normal:{normal:.4f} - Relaxed:{relaxed:.4f}     {choice}          ")
+
 # Run the code
+initiate_tf()
 streamCleanData()
 
 
