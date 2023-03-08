@@ -31,11 +31,10 @@ current_alpha_max = 0.0
 current_beta_max = 0.0
 current_gamma_max = 0.0
 
-filename = "dataset_features/features_raw001.csv"
+filename_raw = "dataset_features/features_raw001.csv"
 filename_clean = "dataset_features/features_clean001.csv"
-ai_model_path = "models/ei-eeg-classifier-tensorflow-lite-float32-model3.lite"
 
-output_file = "data_generated.csv"
+ai_model_path = "models/ei-eeg_features_raw01-classifier-tensorflow-lite-float32-model.lite"
 
 confidence_threshold = 0.6                                      # default in Edge Impulse is 0.6
 recording = 0
@@ -77,7 +76,7 @@ class StreamCleanDataOSC():
 
 
     def update_OSCstream(self):
-        global filename,filename_clean
+        global filename_raw,filename_clean
         
         nb_pull = 0
         signal_clean_TP9,signal_clean_AF7,signal_clean_AF8,signal_clean_TP10 = [[],[],[],[]]
@@ -116,8 +115,12 @@ class StreamCleanDataOSC():
                         # reshape clean data to (256,4)
                         my_array = np.array([signal_clean_TP9,signal_clean_AF7,signal_clean_AF8,signal_clean_TP10])
                         clean_data = my_array.reshape(256,4)
+                        #features generation
+                        vectors_raw,headers = gen_training_matrix(self.data[:,:4])
+                        vectors_clean,headers = gen_training_matrix(clean_data)
                         # ===== AI classifier   =====
-                        inference(self.data[:,:4])
+                        # inference(self.data[:,:4])
+                        inference(vectors_raw)
 
                         # ===== RECORD FEATURES =====
                         # Check if a key has been pressed
@@ -132,7 +135,7 @@ class StreamCleanDataOSC():
                                 if not recording:
                                     start_time = time()
                                     current_time = datetime.now()
-                                    time_str = current_time.strftime("Bart-%Y-%m-%d_%H-%M-%S")
+                                    time_str = current_time.strftime("Guest-%Y-%m-%d_%H-%M-%S")
                                     beep = 1
 
                                 if key == "0":
@@ -162,9 +165,9 @@ class StreamCleanDataOSC():
                                 #     marker = 0
                             else:
                                 marker = 0
-                            gen_training_matrix(self.data[:,:4],key,filename,marker,time_str)
-                            gen_training_matrix(clean_data,key,filename_clean,marker,time_str)
                             record_raw_data(data_tampstamped,key,time_str,marker)
+                            save_features_matrix(vectors_raw,headers,key,filename_raw,marker,time_str)
+                            save_features_matrix(vectors_clean,headers,key,filename_clean,marker,time_str)
                         else:
                             recording = 0
                         # =====
@@ -385,8 +388,10 @@ def record_raw_data(data,current_event,time_str,marker):
     if not os.path.isfile(current_file):
         # write header and data to new file
         f = open (current_file,'a',newline='')
-        for i in range(len(header)):
-            f.write(str(header[i]) + ",")
+        # for i in range(len(header)):
+        #     f.write(str(header[i]) + ",")
+        # f.write("\n")
+        f.write("timestam,TP9,AF7,AF8,TP10,AUX,Marker")
         f.write("\n")
         writer = csv.writer(f)
         for row in data:
@@ -404,11 +409,13 @@ def record_raw_data(data,current_event,time_str,marker):
     f.close()
 
 
-def gen_training_matrix(data,state,filename,marker,time_str):
+def gen_training_matrix(data):
 
     # ===== generate faetures =====
-    vectors, headers = generate_feature_vectors_from_samples(data = data, nsamples = 256, state = state) 
+    vectors, headers = generate_feature_vectors_from_samples(data = data, nsamples = 256, state = None) 
+    return vectors,headers
 
+def save_features_matrix(vectors,headers,state,filename,marker,time_str):
     # ===== Save features to csv file =====
     if not os.path.isfile(filename):
         # write header and data to new file
@@ -471,8 +478,8 @@ def inference(all_samples):
     # print(all_samples)
     #===== Exemple
     # test = [13.9985, -0.2576, -0.5537, 2.9149, 2.7317, 3.2369, 2.5349, 1.8408, 1.7954, 1.3283, 1.3328, 5.7935, -0.0174, 0.0268, 2.2021, 1.7871, 2.2485, 2.0555, 1.7070, 1.2183, 1.0431, 0.8177, 9.0692, 0.8261, 0.8312, 2.6412, 2.5027, 2.7554, 2.6118, 2.2087, 1.8644, 1.5261, 1.1835, 10.4281, -0.0459, -0.1172, 2.7407, 2.8306, 2.9857, 2.5295, 1.8870, 1.8773, 1.7035, 1.3773]
-    # input_samples = np.array(test, dtype=np.float32) #may work
-    # input_samples = np.expand_dims(input_samples, axis=0) #may work
+    # input_samples = np.array(test, dtype=np.float32) 
+    # input_samples = np.expand_dims(input_samples, axis=0) 
     #====== 
 
     # input_details[0]['index'] = the index which accepts the input
@@ -485,7 +492,7 @@ def inference(all_samples):
     output_data = interpreter.get_tensor(output_details[0]['index'])
 
     # finding output data
-    normal       = output_data[0][0]
+    normal   = output_data[0][0]
     relaxed  = output_data[0][1]
 
     # checking if over confidence threshold
