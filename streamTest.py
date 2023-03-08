@@ -116,11 +116,11 @@ class StreamCleanDataOSC():
                         my_array = np.array([signal_clean_TP9,signal_clean_AF7,signal_clean_AF8,signal_clean_TP10])
                         clean_data = my_array.reshape(256,4)
                         #features generation
-                        vectors_raw,headers = gen_training_matrix(self.data[:,:4])
-                        vectors_clean,headers = gen_training_matrix(clean_data)
+                        vectors_raw,headers = gen_training_matrix(self.data[:,:4]) #=====
+                        vectors_clean,headers = gen_training_matrix(clean_data) #==============
                         # ===== AI classifier   =====
                         # inference(self.data[:,:4])
-                        inference(vectors_raw)
+                        inference(vectors_raw)                                #==============
 
                         # ===== RECORD FEATURES =====
                         # Check if a key has been pressed
@@ -135,15 +135,15 @@ class StreamCleanDataOSC():
                                 if not recording:
                                     start_time = time()
                                     current_time = datetime.now()
-                                    time_str = current_time.strftime("Guest-%Y-%m-%d_%H-%M-%S")
+                                    time_str = current_time.strftime("Raoul-%Y-%m-%d_%H-%M-%S")
                                     beep = 1
 
                                 if key == "0":
                                     marker_time = nan
                                     duration_time = 15
                                 elif key == "1" or key == "2":
-                                    duration_time = 30
-                                    marker_time = 15
+                                    duration_time = 15
+                                    marker_time = 14
                                 else:
                                     duration_time = 5
                                     marker_time = 1
