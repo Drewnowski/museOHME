@@ -2,11 +2,11 @@ from math import nan
 from pylsl import StreamInlet, resolve_byprop
 from threading import Thread
 import numpy as np
-from scipy.signal import butter,filtfilt,detrend,iirnotch,welch
+from scipy.signal import butter,filtfilt,detrend,iirnotch,welch,find_peaks
 from time import sleep,time
 import winsound
 from datetime import datetime
-import tensorflow as tf
+# import tensorflow as tf
 import msvcrt # check if key pressed
 
 #osc import
@@ -30,11 +30,12 @@ current_alpha_max = 0.0
 current_beta_max = 0.0
 current_gamma_max = 0.0
 
-filename = "dataset_features/features_raw001.csv"
-filename_clean = "dataset_features/features_clean001.csv"
-path_ai_model = "models/ei-eeg-classifier-tensorflow-lite-float32-model.lite"
+filename = "dataset_features/features_rawTest.csv"
+filename_clean = "dataset_features/features_cleanTest.csv"
+# path_ai_model = "models/ei-eeg-classifier-tensorflow-lite-float32-model.lite"
+prefix = "Test"
 
-output_file = "data_generated.csv"
+# output_file = "data_generated.csv"
 
 confidence_threshold = 0.6                                      # default in Edge Impulse is 0.6
 recording = 0
@@ -46,24 +47,25 @@ def streamCleanData():
 
     print("Looking for an EEG stream...")
     streams = resolve_byprop('type', 'EEG', timeout=5)
-
+    ppg_streams = resolve_byprop("type", "PPG", timeout=5)
     if len(streams) == 0:
         raise(RuntimeError("Can't find EEG stream."))
 
     print("Start acquiring data.")
 
     # Init stream if BlueMuse is streaming, we take the first streming device
-    stream = StreamCleanDataOSC(streams[0])
+    stream = StreamCleanDataOSC(streams[0],ppg_streams[0])
     # stream.update_OSCstream()
     stream.start()
     
 
 class StreamCleanDataOSC():
-    def __init__(self, stream):
+    def __init__(self, stream,ppg_stream):
         """Init"""
         self.stream = stream
         self.fs_speed = 32
         self.inlet = StreamInlet(stream, max_chunklen=256)
+        self.ppg_inlet = StreamInlet(ppg_stream)
         info = self.inlet.info()
         # self.sfreq = info.nominal_srate()
         self.n_chan = info.channel_count()
@@ -76,15 +78,19 @@ class StreamCleanDataOSC():
 
 
     def update_OSCstream(self):
-        global filename,filename_clean
-        
+        global filename,filename_clean,prefix
+
+        heart_rate = 0
+        SpO2 = 0
         nb_pull = 0
+        nb_ppg_pull = 0
+        ppg_buffer = []
         signal_clean_TP9,signal_clean_AF7,signal_clean_AF8,signal_clean_TP10 = [[],[],[],[]]
         try:
             while self.started:
                 # samples in this case (32,5)
                 samples, timestamps = self.inlet.pull_chunk(timeout=1.0, max_samples=self.fs_speed)#256
-                
+                ppg_chunk, ppg_timestamp = self.ppg_inlet.pull_chunk(timeout=1.0,max_samples=65)
                 if timestamps:
                     # stack all chunk of data to a 2D array (256,5)  
                     self.data = np.vstack([self.data, samples])
@@ -128,7 +134,7 @@ class StreamCleanDataOSC():
                                 if not recording:
                                     start_time = time()
                                     current_time = datetime.now()
-                                    time_str = current_time.strftime("Bart-%Y-%m-%d_%H-%M-%S")
+                                    time_str = current_time.strftime(prefix+"-%Y-%m-%d_%H-%M-%S")
                                     beep = 1
 
                                 if key == "0":
@@ -158,8 +164,8 @@ class StreamCleanDataOSC():
                                 #     marker = 0
                             else:
                                 marker = 0
-                            gen_training_matrix(self.data[:,:4],key,filename,marker,time_str)
-                            gen_training_matrix(clean_data,key,filename_clean,marker,time_str)
+                            gen_training_matrix(self.data[:,:4],key,filename,marker,time_str,heart_rate,SpO2)
+                            gen_training_matrix(clean_data,key,filename_clean,marker,time_str,heart_rate,SpO2)
                             record_raw_data(data_tampstamped,key,time_str,marker)
                         else:
                             recording = 0
@@ -167,7 +173,20 @@ class StreamCleanDataOSC():
                         nb_pull = 0
                     else:
                         sleep(0.12) # 256/32 = 8 -> 100ms/8 = 12.5ms
-                
+                # Receive PPG data and calculate heart rate every 5 seconds        
+                if ppg_timestamp: 
+                    ppg_buffer.extend(ppg_chunk)
+                    nb_ppg_pull += 1
+                    if nb_ppg_pull >= 5:
+                        nb_ppg_pull = 0
+                        ppg_signal = np.array(ppg_buffer).T
+                        filtred_ppg_signal = ppg_data_filter(ppg_signal)
+
+                        heart_rate = HR_generator(filtred_ppg_signal)
+                        SpO2 = calc_SpO2(filtred_ppg_signal)
+                        print('Heart rate:', heart_rate,"/5s")
+                        print('SpO2:', SpO2)
+                        ppg_buffer = []
 
         except RuntimeError as e:
             raise
@@ -365,6 +384,53 @@ class StreamCleanDataOSC():
         # client.send(message_array.build())
         # client.send(message_array2.build())
         # print(time())
+def ppg_data_filter(ppg_signal,lowcut=0.5, highcut=4.0, fs=65):
+    # Define the filter parameters
+    nyquist_freq =  fs / 2.0
+    low = lowcut / nyquist_freq
+    high = highcut / nyquist_freq
+
+    # Apply the bandpass filter
+    b, a = butter(3, [low, high], btype='bandpass')
+    filtered_signal = filtfilt(b, a, ppg_signal)
+
+    return filtered_signal
+
+def HR_generator(data):
+    # Convert the PPG signal to a 1D array by taking the mean across all channels
+    ppg_signal = np.mean(data, axis=0)
+
+    
+    # Find the peaks in the heart rate signal using a peak detection algorithm
+    peaks, _ = find_peaks(ppg_signal, height=0)
+    return len(peaks)
+
+def calc_SpO2(filtered_signal):
+    filtered_signal = np.mean(filtered_signal, axis=0)
+
+    # Define the absorption coefficients for oxygenated and deoxygenated hemoglobin
+    alpha_oxy = 0.15
+    alpha_deoxy = 0.17
+
+    # Calculate the ratio of the AC component to the DC component of the PPG signal
+    ratio = calculate_ratio(filtered_signal)
+
+    # Use the Beer-Lambert law to estimate the SpO2 value
+    spo2 = (alpha_oxy * ratio) / (alpha_oxy * ratio + alpha_deoxy)
+    return spo2
+
+def calculate_ratio(signal):
+    """
+    Calculate the ratio of the AC component to the DC component of the PPG signal.
+
+    :param signal: The PPG signal with the AC component extracted.
+    :return: The ratio of the AC component to the DC component of the signal.
+    """
+    ac_component = signal - np.mean(signal)
+    dc_component = np.mean(signal)
+    ratio = np.max(ac_component) / dc_component
+
+    return ratio
 
 def play_beep(freq, duration):
     winsound.Beep(freq, duration)
@@ -400,7 +466,7 @@ def record_raw_data(data,current_event,time_str,marker):
     f.close()
 
 
-def gen_training_matrix(data,state,filename,marker,time_str):
+def gen_training_matrix(data,state,filename,marker,time_str,heart_rate,SpO2):
 
     # ===== generate faetures =====
     vectors, headers = generate_feature_vectors_from_samples(data = data, nsamples = 256, state = state) 
@@ -411,10 +477,12 @@ def gen_training_matrix(data,state,filename,marker,time_str):
         f = open (filename,'a+')
         for i in range(len(headers)):
             f.write(str(headers[i]) + ",")
-        f.write("Label,Marker,file_name")
+        f.write("HR/5s,SpO2,Label,Marker,file_name")
         f.write("\n")
         for i in vectors:
             f.write(str(i) + ",")
+        f.write(str(heart_rate)+",")
+        f.write(str(SpO2)+",")
         f.write(str(state)+",")
         f.write(str(marker)+",")
         f.write(time_str)
@@ -424,6 +492,8 @@ def gen_training_matrix(data,state,filename,marker,time_str):
         f = open (filename,'a+')
         for i in vectors:
             f.write(str(i) + ",")
+        f.write(str(heart_rate)+",")
+        f.write(str(SpO2)+",")
         f.write(str(state)+",")
         f.write(str(marker)+",")
         f.write(time_str)
@@ -431,63 +501,7 @@ def gen_training_matrix(data,state,filename,marker,time_str):
 
     return None
 
-"""
-# *********** Initiates TensorFlow Lite ***********
-def initiate_tf():
-    global interpreter, input_details, output_details
 
-    ####################### TF Lite path and file ######################
-    path = "Models/"
-    lite_file = "ei-muse-blinks-separately-recorded-nn-classifier-tensorflow-lite-float32-model.lite"
-
-    ####################### INITIALIZE TF Lite #########################
-    # Load TFLite model and allocate tensors.
-    interpreter = tf.lite.Interpreter(model_path = path + lite_file)
-
-    # Get input and output tensors.
-    input_details = interpreter.get_input_details()
-    output_details = interpreter.get_output_details()
-
-    # Allocate tensors
-    interpreter.allocate_tensors()
-
-    # Printing input and output details for debug purposes in case anything is not working
-    print (input_details)
-    print(output_details)
-
-
-# ******** INFERENCE ******** 
-def inference():
-    global score, expected, choice, blinks, blinked
-
-    input_samples = np.array(all_samples, dtype=np.float32)
-    input_samples = np.expand_dims(input_samples, axis=0)
-
-    # input_details[0]['index'] = the index which accepts the input
-    interpreter.set_tensor(input_details[0]['index'], input_samples)
-
-    # run the inference
-    interpreter.invoke()
-
-    # output_details[0]['index'] = the index which provides the input
-    output_data = interpreter.get_tensor(output_details[0]['index'])
-
-    # finding output data
-    blink       = output_data[0][0]
-    background  = output_data[0][1]
-
-    # checking if over confidence threshold
-    if blink >= confidence_threshold:
-        choice = "Blink"
-        blinks += 1
-        blinked = True
-    elif background >= confidence_threshold:
-        choice = "Background"
-    else:
-        choice = "----"
-
-    print(f"Blink:{blink:.4f} - Background:{background:.4f}     {choice}          ")
-"""
 # Run the code
 streamCleanData()
 
