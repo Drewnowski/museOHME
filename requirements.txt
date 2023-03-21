@@ -1,5 +1,5 @@
 pylsl
-numpy
+numpy==1.22.3
 scipy
 python-osc
 pandas
