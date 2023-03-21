@@ -90,7 +90,7 @@ class StreamCleanDataOSC():
             while self.started:
                 # samples in this case (32,5)
                 samples, timestamps = self.inlet.pull_chunk(timeout=1.0, max_samples=self.fs_speed)#256
-                ppg_chunk, ppg_timestamp = self.ppg_inlet.pull_chunk(timeout=1.0,max_samples=65)
+                ppg_chunk, ppg_timestamp = self.ppg_inlet.pull_chunk(timeout=1.0,max_samples=8)
                 if timestamps:
                     # stack all chunk of data to a 2D array (256,5)  
                     self.data = np.vstack([self.data, samples])
@@ -177,7 +177,7 @@ class StreamCleanDataOSC():
                 if ppg_timestamp: 
                     ppg_buffer.extend(ppg_chunk)
                     nb_ppg_pull += 1
-                    if nb_ppg_pull >= 5:
+                    if nb_ppg_pull >= 40: # 5s * 8 chunk
                         nb_ppg_pull = 0
                         ppg_signal = np.array(ppg_buffer).T
                         filtred_ppg_signal = ppg_data_filter(ppg_signal)
@@ -185,7 +185,7 @@ class StreamCleanDataOSC():
                         heart_rate = HR_generator(filtred_ppg_signal)
                         SpO2 = calc_SpO2(filtred_ppg_signal)
                         print('Heart rate:', heart_rate,"/5s")
-                        print('SpO2:', SpO2)
+                        # print('SpO2:', SpO2)
                         ppg_buffer = []
 
         except RuntimeError as e:
@@ -384,7 +384,7 @@ class StreamCleanDataOSC():
         # client.send(message_array.build())
         # client.send(message_array2.build())
         # print(time())
-def ppg_data_filter(ppg_signal,lowcut=0.5, highcut=4.0, fs=65):
+def ppg_data_filter(ppg_signal,lowcut=0.5, highcut=4.0, fs=64):
     # Define the filter parameters
     nyquist_freq =  fs / 2.0
     low = lowcut / nyquist_freq
