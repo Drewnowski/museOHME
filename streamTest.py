@@ -33,7 +33,7 @@ current_gamma_max = 0.0
 filename = "dataset_features/features_rawTest.csv"
 filename_clean = "dataset_features/features_cleanTest.csv"
 # path_ai_model = "models/ei-eeg-classifier-tensorflow-lite-float32-model.lite"
-prefix = "Test"
+prefix = "F_24"
 
 # output_file = "data_generated.csv"
 
@@ -127,7 +127,10 @@ class StreamCleanDataOSC():
                             global recording,start_time,duration_time,marker_time
                             # Read the key that was pressed
                             key = msvcrt.getch().decode('utf-8')
-                            # state (0 = neutral, 1 = concentrating, 2 = relaxed, 3 = blink, 4 = jaw_movement)
+
+
+
+        # state (0 = breathing, 1 = concentrating, 2 = relaxed, 3 = focus, 4 = jaw_movement)
                             if key == '0' or key == '1' or key == '2' or key == '3' or key == '4': 
                                 
                                 # update time vars
@@ -138,14 +141,14 @@ class StreamCleanDataOSC():
                                     beep = 1
 
                                 if key == "0":
-                                    marker_time = nan
+                                    marker_time = 14
                                     duration_time = 15
                                 elif key == "1" or key == "2":
-                                    duration_time = 30
-                                    marker_time = 15
+                                    duration_time = 15
+                                    marker_time = 14
                                 else:
-                                    duration_time = 5
-                                    marker_time = 1
+                                    duration_time = 15
+                                    marker_time = 14
                         # ===== Recod raw ====
                         end_time = time()
                         # print(end_time - start_time)
